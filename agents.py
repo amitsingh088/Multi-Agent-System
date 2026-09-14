@@ -1,6 +1,5 @@
-from langchain.agents import create_agent
+from langgraph.prebuilt import create_react_agent
 from langchain_groq import ChatGroq
-#from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from tools import web_search , scrape_url 
@@ -9,32 +8,38 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-
-
-#model setup 
-#llm = ChatOpenAI(model = "gpt-4o-mini",temperature=0)
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0
+# Two-model setup:
+# - agent_llm (qwen3) for search/reader agents — supports tool calling
+# - fast_llm (compound-beta-mini) for writer/critic — no tools needed, much faster
+agent_llm = ChatGroq(
+    model="qwen/qwen3.8-27b",
+    temperature=0,
+    max_tokens=900
 )
 
-#1st agent 
+fast_llm = ChatGroq(
+    model="compound-beta-mini",
+    temperature=0,
+    max_tokens=900
+)
+
+#1st agent — search
 def build_search_agent():
-    return create_agent(
-        model = llm,
-        tools= [web_search]
+    return create_react_agent(
+        model = agent_llm,
+        tools= [web_search],
     )
 
-#2nd agent 
+#2nd agent — reader
 
 def build_reader_agent():
-    return create_agent(
-        model = llm,
-        tools = [scrape_url]
+    return create_react_agent(
+        model = agent_llm,
+        tools = [scrape_url],
     )
 
 
-#writer chain 
+#writer chain — uses fast model (no tool calling needed)
 
 writer_prompt = ChatPromptTemplate.from_messages([
     ("system", "You are an expert research writer. Write clear, structured and insightful reports."),
@@ -54,9 +59,9 @@ Structure the report as:
 Be detailed, factual and professional."""),
 ])
 
-writer_chain = writer_prompt | llm | StrOutputParser()
+writer_chain = writer_prompt | fast_llm | StrOutputParser()
 
-#critic_chain 
+#critic_chain — uses fast model (no tool calling needed)
 
 critic_prompt = ChatPromptTemplate.from_messages([
      ("system", "You are a sharp and constructive research critic. Be honest and specific."),
@@ -81,4 +86,4 @@ One line verdict:
 ..."""),
 ])
 
-critic_chain = critic_prompt | llm | StrOutputParser()
+critic_chain = critic_prompt | fast_llm | StrOutputParser()

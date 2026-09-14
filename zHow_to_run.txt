@@ -1,0 +1,5 @@
+1-> Activate your Python virtual environment using:   source .venv/bin/activate
+
+2-> Install dependencies:  pip install -r requirements.txt
+
+3-> Run the Streamlit app:  streamlit run app.py

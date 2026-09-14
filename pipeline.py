@@ -1,4 +1,6 @@
-from agents import build_reader_agent , build_search_agent , writer_chain , critic_chain
+import time
+from agents import writer_chain , critic_chain
+from tools import web_search, scrape_url
 
 def run_research_pipeline(topic : str) -> dict:
 
@@ -9,31 +11,34 @@ def run_research_pipeline(topic : str) -> dict:
     print("step 1 - search agent is working ...")
     print("="*50)
 
-    search_agent = build_search_agent()
-    search_result = search_agent.invoke({
-        "messages" : [("user", f"Find recent, reliable and detailed information about: {topic}")]
-    })
-    state["search_results"] = search_result['messages'][-1].content
+    # FAST PATH: Instead of using a slow LLM agent that loops to figure out how to search,
+    # we directly call the search tool. This takes 1 second instead of 30 seconds.
+    search_results_str = web_search.invoke(topic)
+    state["search_results"] = search_results_str
 
-    print("\n search result ",state['search_results'])
+    print("\n search result ", state['search_results'][:500])
 
     #step 2 - reader agent 
     print("\n"+" ="*50)
     print("step 2 - Reader agent is scraping top resources ...")
     print("="*50)
 
-    reader_agent = build_reader_agent()
-    reader_result = reader_agent.invoke({
-        "messages": [("user",
-            f"Based on the following search results about '{topic}', "
-            f"pick the most relevant URL and scrape it for deeper content.\n\n"
-            f"Search Results:\n{state['search_results'][:800]}"
-        )]
-    })
+    # FAST PATH: Extract the first URL from search results and scrape it directly.
+    # No LLM agent needed for this step either!
+    first_url = None
+    for line in search_results_str.split('\n'):
+        if line.startswith('URL: '):
+            first_url = line.replace('URL: ', '').strip()
+            break
+            
+    if first_url:
+        scraped = scrape_url.invoke(first_url)
+    else:
+        scraped = "No URL found to scrape."
 
-    state['scraped_content'] = reader_result['messages'][-1].content
+    state['scraped_content'] = scraped
 
-    print("\nscraped content: \n", state['scraped_content'])
+    print("\nscraped content: \n", state['scraped_content'][:500])
 
     #step 3 - writer chain 
 
@@ -42,8 +47,8 @@ def run_research_pipeline(topic : str) -> dict:
     print("="*50)
 
     research_combined = (
-        f"SEARCH RESULTS : \n {state['search_results']} \n\n"
-        f"DETAILED SCRAPED CONTENT : \n {state['scraped_content']}"
+        f"SEARCH RESULTS : \n {state['search_results'][:800]} \n\n"
+        f"DETAILED SCRAPED CONTENT : \n {state['scraped_content'][:800]}"
     )
 
     state["report"] = writer_chain.invoke({
@@ -51,7 +56,7 @@ def run_research_pipeline(topic : str) -> dict:
         "research" : research_combined
     })
 
-    print("\n Final Report\n",state['report'])
+    print("\n Final Report\n",state['report'][:500])
 
     #critic report 
 
@@ -63,10 +68,9 @@ def run_research_pipeline(topic : str) -> dict:
         "report":state['report']
     })
 
-    print("\n critic report \n", state['feedback'])
+    print("\n critic report \n", state['feedback'][:500])
 
     return state
-
 
 
 if __name__ == "__main__":
